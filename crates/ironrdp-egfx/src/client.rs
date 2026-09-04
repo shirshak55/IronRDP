@@ -281,6 +281,15 @@ pub trait GraphicsPipelineHandler: Send {
         false
     }
 
+    /// Whether the handler decodes RemoteFX Progressive frames itself.
+    ///
+    /// When `true`, `WireToSurface2` PDUs are delivered only to
+    /// [`GraphicsPipelineHandler::on_wire_to_surface2`] and the client's own
+    /// progressive decoder is left untouched.
+    fn supports_progressive_passthrough(&self) -> bool {
+        false
+    }
+
     /// Called with a raw AVC420 bitmap stream when [`Self::supports_avc420_passthrough`] is `true`.
     fn on_avc420(
         &mut self,
@@ -417,6 +426,7 @@ pub struct GraphicsPipelineClient {
     handler: Box<dyn GraphicsPipelineHandler>,
     h264_decoder: Option<Box<dyn H264Decoder>>,
     avc420_passthrough: bool,
+    progressive_passthrough: bool,
     /// Built on first use via [`Self::decode_clearcodec`]. `None` means no ClearCodec
     /// frame has arrived yet, not that the codec is unsupported: keeping the ~1.37 MiB
     /// V-bar and glyph cache spine (see `ClearCodecDecoder::new`) unallocated saves that
@@ -448,10 +458,12 @@ impl GraphicsPipelineClient {
     /// rather than up front for a codec the session may never use.
     pub fn new(handler: Box<dyn GraphicsPipelineHandler>, h264_decoder: Option<Box<dyn H264Decoder>>) -> Self {
         let avc420_passthrough = handler.supports_avc420_passthrough();
+        let progressive_passthrough = handler.supports_progressive_passthrough();
         Self {
             handler,
             h264_decoder,
             avc420_passthrough,
+            progressive_passthrough,
             clearcodec_decoder: None,
             planar_decoder: BitmapStreamDecoder::default(),
             progressive_decoder: ProgressiveDecoder::new(),
@@ -554,7 +566,9 @@ impl GraphicsPipelineClient {
             GfxPdu::WireToSurface2(pdu) => {
                 trace!("WireToSurface2 (progressive codec)");
                 self.handler.on_wire_to_surface2(&pdu);
-                self.handle_wire_to_surface2(pdu)?;
+                if !self.progressive_passthrough {
+                    self.handle_wire_to_surface2(pdu)?;
+                }
                 Ok(vec![])
             }
             GfxPdu::EndFrame(end) => self.handle_end_frame(end.frame_id),
