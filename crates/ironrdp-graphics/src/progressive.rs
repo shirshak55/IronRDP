@@ -2075,7 +2075,7 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_pass_rejects_truncated_srl() {
+    fn upgrade_pass_rejects_runaway_zero_run() {
         let mut coefficients = [0i16; COEFFICIENTS_PER_COMPONENT];
         let mut sign = [SIGN_POSITIVE; COEFFICIENTS_PER_COMPONENT];
         sign[0] = SIGN_ZERO;
@@ -2083,9 +2083,11 @@ mod tests {
         let mut prev_prog_quant = ComponentCodecQuant::LOSSLESS;
         prev_prog_quant.hl1 = 4;
 
+        // A zero-DAS coefficient with an empty SRL stream reads only implicit
+        // zeros, so the zero run never terminates and overruns the component.
         assert_eq!(
             decode_upgrade_pass(
-                &[0x80, 0x00],
+                &[],
                 &[],
                 &prev_prog_quant,
                 &ComponentCodecQuant::LOSSLESS,
@@ -2093,7 +2095,7 @@ mod tests {
                 &mut coefficients,
                 &mut sign,
             ),
-            Err(SrlError::Truncated)
+            Err(SrlError::ZeroRunTooLong)
         );
     }
 
@@ -2112,13 +2114,8 @@ mod tests {
         let sign = tile.sign;
 
         assert_eq!(
-            tile.decode_upgrade(
-                [&[0x90, 0x00], &[0x80, 0x00], &[]],
-                [&[], &[], &[]],
-                [ComponentCodecQuant::LOSSLESS; 3],
-                75,
-            ),
-            Err(SrlError::Truncated)
+            tile.decode_upgrade([&[], &[], &[]], [&[], &[], &[]], [ComponentCodecQuant::LOSSLESS; 3], 75,),
+            Err(SrlError::ZeroRunTooLong)
         );
 
         assert_eq!(tile.coefficients, coefficients);
