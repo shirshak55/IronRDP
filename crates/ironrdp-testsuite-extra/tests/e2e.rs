@@ -565,6 +565,12 @@ impl RdpdrFixtureState {
                 ])
             }
             RdpdrFixturePhase::AwaitDeviceAnnouncement => {
+                // The client always sends a Client Device List Announce at the handshake, even with
+                // no pre-logon devices; skip that empty announce (DeviceCount == 0) and keep waiting
+                // for the real device announced after UserLoggedon.
+                if read_u32(payload, 4) == 0 {
+                    return Ok(Vec::new());
+                }
                 let device_id = read_u32(payload, 12);
                 self.announced_device_id = Some(device_id);
 

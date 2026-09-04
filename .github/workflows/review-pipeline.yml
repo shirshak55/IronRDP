@@ -76,7 +76,7 @@ jobs:
           fi
 
       - name: Fetch bounded review and location context
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           HEAD_SHA: ${{ inputs.head-sha }}
           PULL_REQUEST_NUMBER: ${{ inputs.pr-number }}
@@ -144,7 +144,7 @@ jobs:
         run: rm -rf pr-head/.git
 
       - name: Upload review evidence
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-evidence-${{ inputs.head-sha }}
           path: |
@@ -157,7 +157,7 @@ jobs:
           overwrite: true
 
       - name: Upload validation context
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-validation-${{ inputs.head-sha }}
           path: pr-evidence/validation-context.json
@@ -167,7 +167,7 @@ jobs:
 
       - name: Upload protocol corpus
         if: contains(fromJSON(inputs.specialist-reviewers), 'protocol')
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-corpus-${{ inputs.head-sha }}
           path: review-sources
@@ -190,20 +190,20 @@ jobs:
       matrix:
         reviewer: ${{ fromJSON(inputs.specialist-reviewers) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Download review evidence
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-evidence-${{ inputs.head-sha }}
           path: .
 
       - name: Download protocol corpus
         if: matrix.reviewer == 'protocol'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-corpus-${{ inputs.head-sha }}
           path: review-sources
@@ -220,7 +220,7 @@ jobs:
       - id: validate
         name: Validate specialist result
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           HEAD_SHA: ${{ inputs.head-sha }}
           REVIEWER: ${{ matrix.reviewer }}
@@ -275,7 +275,7 @@ jobs:
 
       - name: Upload validated specialist result
         if: always() && steps.validate.outcome == 'success'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-specialist-${{ inputs.head-sha }}-${{ matrix.reviewer }}
           path: specialist-results/${{ matrix.reviewer }}.json
@@ -294,14 +294,14 @@ jobs:
       ready: ${{ steps.aggregate.outputs.ready }}
       reason: ${{ steps.aggregate.outputs.reason }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Download specialist results
         continue-on-error: true
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           pattern: review-specialist-${{ inputs.head-sha }}-*
           path: specialist-results
@@ -309,7 +309,7 @@ jobs:
 
       - id: aggregate
         name: Build validated specialist findings
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           HEAD_SHA: ${{ inputs.head-sha }}
           SPECIALIST_REVIEWERS: ${{ inputs.specialist-reviewers }}
@@ -354,7 +354,7 @@ jobs:
             }));
 
       - name: Upload specialist aggregate
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-aggregate-${{ inputs.head-sha }}
           path: validated-specialist-findings.json
@@ -371,19 +371,19 @@ jobs:
       contents: read
     environment: llm-providers
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Download review evidence
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-evidence-${{ inputs.head-sha }}
           path: .
 
       - name: Download specialist aggregate
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-aggregate-${{ inputs.head-sha }}
           path: .
@@ -399,7 +399,7 @@ jobs:
 
       - name: Persist general review result
         if: always()
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           RAW_OUTPUT: ${{ steps.agent.outputs.structured-output }}
           MODEL_REASON: ${{ steps.agent.outputs.failure-reason }}
@@ -417,7 +417,7 @@ jobs:
 
       - name: Upload general review result
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: review-general-${{ inputs.head-sha }}
           path: general-review/result.json
@@ -436,35 +436,35 @@ jobs:
       output: ${{ steps.final.outputs.output }}
       reason: ${{ steps.final.outputs.reason }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
 
       - name: Download validation context
         if: needs.general.result == 'success'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-validation-${{ inputs.head-sha }}
           path: pr-evidence
 
       - name: Download specialist aggregate
         if: needs.general.result == 'success'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-aggregate-${{ inputs.head-sha }}
           path: .
 
       - name: Download general review result
         if: needs.general.result == 'success'
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: review-general-${{ inputs.head-sha }}
           path: general-review
 
       - id: final
         name: Validate general review
-        uses: actions/github-script@v8
+        uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd
         env:
           HEAD_SHA: ${{ inputs.head-sha }}
           EVIDENCE_RESULT: ${{ needs.evidence.result }}

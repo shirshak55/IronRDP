@@ -24,10 +24,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.7.3
+        uses: Swatinem/rust-cache@23bce251a8cd2ffc3c1075eaa2367cf899916d84
 
       - name: Build ironrdp-agent
         run: cargo build -p ironrdp-agent --release
@@ -46,7 +46,7 @@ jobs:
 
       - name: Upload screenshots
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: agentic-rdp-screenshots
           path: artifacts\agentic-rdp\*.png
@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload logs and metadata
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: agentic-rdp-logs
           path: artifacts\agentic-rdp

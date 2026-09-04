@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Get dry run
         id: get-dry-run
@@ -96,11 +96,11 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Configure Android NDK
         if: ${{ matrix.os == 'android' }}
-        uses: Devolutions/actions-public/cargo-android-ndk@v1
+        uses: Devolutions/actions-public/cargo-android-ndk@fd3ffa7086f4ccc7b7907cd1adfcac325ac65896
         with:
           android_api_level: "21"
 
@@ -160,13 +160,13 @@ jobs:
 
       - name: Setup LLVM
         if: ${{ matrix.os == 'linux' }}
-        uses: Devolutions/actions-public/setup-llvm@v1
+        uses: Devolutions/actions-public/setup-llvm@fd3ffa7086f4ccc7b7907cd1adfcac325ac65896
         with:
           version: "18.1.8"
 
       - name: Setup CBake
         if: ${{ matrix.os == 'linux' }}
-        uses: Devolutions/actions-public/setup-cbake@v1
+        uses: Devolutions/actions-public/setup-cbake@fd3ffa7086f4ccc7b7907cd1adfcac325ac65896
         with:
           cargo_env_scripts: true
 
@@ -275,7 +275,7 @@ jobs:
         shell: pwsh
 
       - name: Upload native components
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ironrdp-${{matrix.os}}-${{matrix.arch}}
           path: dependencies/runtimes/${{matrix.os}}-${{matrix.arch}}
@@ -291,13 +291,13 @@ jobs:
 
     steps:
       - name: Checkout ${{ github.repository }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Setup CCTools
-        uses: Devolutions/actions-public/setup-cctools@v1
+        uses: Devolutions/actions-public/setup-cctools@fd3ffa7086f4ccc7b7907cd1adfcac325ac65896
 
       - name: Download native components
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: dependencies/runtimes
 
@@ -314,7 +314,7 @@ jobs:
         shell: pwsh
 
       - name: Upload native components
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ironrdp-${{ matrix.os }}-universal
           path: dependencies/runtimes/${{ matrix.os }}-universal
@@ -326,10 +326,10 @@ jobs:
 
     steps:
       - name: Check out ${{ github.repository }}
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Add msbuild to PATH
-        uses: microsoft/setup-msbuild@v3
+        uses: microsoft/setup-msbuild@30375c66a4eea26614e0d39710365f22f8b0af57
 
       - name: Install ios workload
         run: dotnet workload install ios
@@ -340,7 +340,7 @@ jobs:
         shell: pwsh
 
       - name: Download native components
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           path: dependencies/runtimes
 
@@ -360,7 +360,7 @@ jobs:
         shell: pwsh
 
       - name: Upload managed components
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: ironrdp-nupkg
           path: ffi/dotnet/Devolutions.IronRdp/bin/Release/*.nupkg
@@ -376,13 +376,13 @@ jobs:
 
     steps:
       - name: Download NuGet package artifact
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: ironrdp-nupkg
           path: package
 
       - name: NuGet login (OIDC)
-        uses: NuGet/login@v1
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841
         id: nuget-login
         with:
           user: ${{ secrets.NUGET_BOT_USERNAME }}
@@ -422,7 +422,7 @@ jobs:
     steps:
       - name: Send slack notification
         id: slack
-        uses: slackapi/slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e
         with:
           payload: |
             {

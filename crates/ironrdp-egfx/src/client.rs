@@ -272,6 +272,24 @@ pub trait GraphicsPipelineHandler: Send {
     /// surface ID, destination rectangle, and RGBA pixel data.
     fn on_bitmap_updated(&mut self, _update: &BitmapUpdate) {}
 
+    /// Whether the handler decodes AVC420 frames itself.
+    ///
+    /// When `true`, raw [`Avc420BitmapStream`]s are delivered to
+    /// [`GraphicsPipelineHandler::on_avc420`] instead of being decoded by the
+    /// client's own H.264 decoder.
+    fn supports_avc420_passthrough(&self) -> bool {
+        false
+    }
+
+    /// Called with a raw AVC420 bitmap stream when [`Self::supports_avc420_passthrough`] is `true`.
+    fn on_avc420(
+        &mut self,
+        _surface_id: u16,
+        _destination_rectangle: &ExclusiveRectangle,
+        _stream: &Avc420BitmapStream<'_>,
+    ) {
+    }
+
     /// Called when a logical frame is complete
     ///
     /// All bitmap updates between the corresponding `StartFrame`
@@ -398,6 +416,7 @@ enum ClientState {
 pub struct GraphicsPipelineClient {
     handler: Box<dyn GraphicsPipelineHandler>,
     h264_decoder: Option<Box<dyn H264Decoder>>,
+    avc420_passthrough: bool,
     /// Built on first use via [`Self::decode_clearcodec`]. `None` means no ClearCodec
     /// frame has arrived yet, not that the codec is unsupported: keeping the ~1.37 MiB
     /// V-bar and glyph cache spine (see `ClearCodecDecoder::new`) unallocated saves that
@@ -428,9 +447,11 @@ impl GraphicsPipelineClient {
     /// and its cache spine is allocated lazily, on the first ClearCodec frame,
     /// rather than up front for a codec the session may never use.
     pub fn new(handler: Box<dyn GraphicsPipelineHandler>, h264_decoder: Option<Box<dyn H264Decoder>>) -> Self {
+        let avc420_passthrough = handler.supports_avc420_passthrough();
         Self {
             handler,
             h264_decoder,
+            avc420_passthrough,
             clearcodec_decoder: None,
             planar_decoder: BitmapStreamDecoder::default(),
             progressive_decoder: ProgressiveDecoder::new(),
@@ -937,6 +958,11 @@ impl GraphicsPipelineClient {
         let mut cursor = ReadCursor::new(bitmap_data);
         let stream = Avc420BitmapStream::decode(&mut cursor).map_err(|e| decode_err!(e))?;
 
+        if self.avc420_passthrough {
+            self.handler.on_avc420(surface_id, dest_rect, &stream);
+            return Ok(());
+        }
+
         let Some(ref mut decoder) = self.h264_decoder else {
             debug!("No H.264 decoder configured, skipping AVC420 frame");
             return Ok(());
@@ -1120,7 +1146,7 @@ impl DvcProcessor for GraphicsPipelineClient {
     }
 
     fn start(&mut self, _channel_id: u32) -> PduResult<Vec<DvcMessage>> {
-        let caps = if self.h264_decoder.is_some() {
+        let caps = if self.h264_decoder.is_some() || self.avc420_passthrough {
             self.handler.capabilities()
         } else {
             // No H.264 decoder: filter out capability sets that imply AVC support.

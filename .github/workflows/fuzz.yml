@@ -21,13 +21,13 @@ jobs:
       AZURE_STORAGE_KEY: ${{ secrets.CORPUS_AZURE_STORAGE_KEY }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Download fuzzing corpus
         run: cargo xtask fuzz corpus-fetch -v
 
       - name: Save corpus
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: |
             ./fuzz/corpus
@@ -42,10 +42,10 @@ jobs:
       fuzz-matrix: ${{ steps.setup-matrix.outputs.fuzz-matrix }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
 
       - name: Setup matrix
         id: setup-matrix
@@ -63,10 +63,10 @@ jobs:
         include: ${{ fromJson(needs.fuzz-setup.outputs.fuzz-matrix) }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Download corpus
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
         with:
           fail-on-cache-miss: true
           path: |
@@ -80,12 +80,12 @@ jobs:
           tree ./fuzz/artifacts
 
       - name: Rust cache
-        uses: Swatinem/rust-cache@v2.9.1
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
         with:
           workspaces: fuzz -> target
 
       - name: Binary cache
-        uses: actions/cache@v5
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
         with:
           path: ./.cargo/local_root/bin
           key: ${{ runner.os }}-bin-${{ github.job }}-${{ hashFiles('xtask/src/bin_version.rs') }}
@@ -117,7 +117,7 @@ jobs:
 
       - name: Upload minified corpus
         if: ${{ always() && !cancelled() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           retention-days: 7
           name: minified-corpus-${{ matrix.target }}
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Merge Artifacts
-        uses: actions/upload-artifact/merge@v7
+        uses: actions/upload-artifact/merge@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: minified-corpus
           pattern: minified-corpus-*
@@ -148,10 +148,10 @@ jobs:
       AZURE_STORAGE_KEY: ${{ secrets.CORPUS_AZURE_STORAGE_KEY }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
 
       - name: Download updated corpus
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
           name: minified-corpus
           path: ./fuzz/
@@ -185,7 +185,7 @@ jobs:
     steps:
       - name: Send slack notification
         id: slack
-        uses: slackapi/slack-github-action@v1.26.0
+        uses: slackapi/slack-github-action@70cd7be8e40a46e8b0eced40b0de447bdb42f68e
         with:
           payload: |
             {

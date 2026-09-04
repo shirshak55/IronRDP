@@ -198,12 +198,10 @@ fn negotiate_printer_capability(rdpdr: &mut Rdpdr) {
 fn acknowledge_printer(rdpdr: &mut Rdpdr, result_code: NtStatus) {
     let client_id = announce_client_id(rdpdr, 12);
     negotiate_printer_capability(rdpdr);
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
     assert_eq!(
         rdpdr
             .process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap())
@@ -378,12 +376,10 @@ fn filesystem_drive_announce_encodes_unicode_data_and_valid_dos_name() {
         .with_drives(Some(vec![(42, drive_name.to_owned())]));
 
     let client_id = announce_client_id(&mut rdpdr, 12);
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
     let responses = rdpdr.process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap()).unwrap();
     assert_eq!(responses.len(), 1);
 
@@ -406,22 +402,18 @@ fn server_announce_reopens_post_logon_drive_announcements() {
         Rdpdr::new(Box::new(NoopRdpdrBackend), "IronRDP".to_owned()).with_drives(Some(vec![(42, "share".to_owned())]));
 
     let client_id = announce_client_id(&mut rdpdr, 12);
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
     let responses = rdpdr.process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap()).unwrap();
     assert_eq!(announced_devices(&responses[0]), vec![(42, DeviceType::Filesystem)]);
 
     let client_id = announce_client_id(&mut rdpdr, 12);
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
     let responses = rdpdr.process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap()).unwrap();
     assert_eq!(announced_devices(&responses[0]), vec![(42, DeviceType::Filesystem)]);
 }
@@ -493,12 +485,10 @@ fn printer_device_announce_is_deferred_until_user_loggedon() {
 
     let client_id = announce_client_id(&mut rdpdr, 12);
     negotiate_printer_capability(&mut rdpdr);
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
 
     let responses = rdpdr.process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap()).unwrap();
     assert_eq!(responses.len(), 1);
@@ -570,12 +560,10 @@ fn printer_is_not_announced_without_server_printer_capability() {
         kind: CoreCapabilityKind::ServerCoreCapabilityRequest,
     });
     rdpdr.process(&encode_vec(&server_capability).unwrap()).unwrap();
-    assert!(
-        rdpdr
-            .process(&encoded_server_client_id_confirm(client_id))
-            .unwrap()
-            .is_empty()
-    );
+    // Client ID Confirm always answers with a device list announce (empty here: no pre-logon devices).
+    let confirm_responses = rdpdr.process(&encoded_server_client_id_confirm(client_id)).unwrap();
+    assert_eq!(confirm_responses.len(), 1);
+    assert!(announced_devices(&confirm_responses[0]).is_empty());
     assert!(
         rdpdr
             .process(&encode_vec(&RdpdrPdu::UserLoggedon).unwrap())

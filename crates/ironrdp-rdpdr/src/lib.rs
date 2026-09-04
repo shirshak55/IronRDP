@@ -428,11 +428,10 @@ impl Rdpdr {
             .map(|(device, (device_id, _))| (device, device_id))
             .unzip();
 
-        let messages = if device_list.is_empty() {
-            Vec::new()
-        } else {
-            self.announce_devices(device_list, device_ids)?
-        };
+        // Announce even an empty list: [MS-RDPEFS] 3.2.5.1.6 has the client always send the
+        // Client Device List Announce, and Windows treats the handshake (and features coupled
+        // to it, such as audio redirection) as incomplete until it arrives.
+        let messages = self.announce_devices(device_list, device_ids)?;
 
         self.client_id_confirmed = true;
         self.post_logon_devices_announced = announce_all_devices;
@@ -987,11 +986,14 @@ mod tests {
             8,
         );
         assert_eq!(client_id, 0x1234);
-        assert!(
+        // The client always sends a Client Device List Announce during the handshake, even with no
+        // pre-logon devices configured (MS-RDPEFS 3.2.5.1.6).
+        assert_eq!(
             rdpdr
                 .process(&encoded_server_client_id_confirm(client_id))
                 .expect("process server client ID confirm")
-                .is_empty()
+                .len(),
+            1
         );
         assert_eq!(
             rdpdr
@@ -1036,7 +1038,8 @@ mod tests {
                 })
                 .is_err()
         );
-        assert!(
+        // The confirm always emits the Client Device List Announce, even when empty.
+        assert_eq!(
             rdpdr
                 .handle_client_id_confirm(VersionAndIdPdu {
                     client_id,
@@ -1044,7 +1047,8 @@ mod tests {
                     ..server_announce
                 })
                 .expect("confirm generated client ID")
-                .is_empty()
+                .len(),
+            1
         );
     }
 
