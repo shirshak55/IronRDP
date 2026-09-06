@@ -64,6 +64,12 @@ impl<'a> SrlDecoder<'a> {
     ///
     /// The adaptive state and a partially consumed zero run are retained for the
     /// next call, as required when SRL entries span bands.
+    ///
+    /// Zero-run code words are read one at a time, only when the next entry is
+    /// needed (like FreeRDP's `progressive_rfx_srl_read`). Windows ends a
+    /// component's stream as soon as every remaining entry is zero, so the
+    /// trailing run has no `1` terminator; a decoder that read ahead to the
+    /// terminator would consume implicit zero chunks past the end without bound.
     pub fn decode(&mut self, num_values: usize, num_bits: u8) -> Result<Vec<i16>, SrlError> {
         let mut output = Vec::with_capacity(num_values);
 
@@ -80,35 +86,21 @@ impl<'a> SrlDecoder<'a> {
                 continue;
             }
 
-            self.zero_run_remaining = self.decode_zero_run()?;
-            self.nonzero_pending = true;
+            let k = self.kp / 8;
+            if self.reader.read_bit() {
+                // `1`: the run ends after the next k bits' worth of zeros, then a non-zero value.
+                self.zero_run_remaining =
+                    usize::try_from(self.reader.read_bits(k)).map_err(|_| SrlError::ZeroRunTooLong)?;
+                self.kp = self.kp.saturating_sub(6);
+                self.nonzero_pending = true;
+            } else {
+                // `0`: a full chunk of 2^k zeros; the run continues with the next code word.
+                self.zero_run_remaining = 1usize << k;
+                self.kp = self.kp.saturating_add(4).min(MAX_KP);
+            }
         }
 
         Ok(output)
-    }
-
-    fn decode_zero_run(&mut self) -> Result<usize, SrlError> {
-        let mut zeros = 0usize;
-
-        loop {
-            let k = self.kp / 8;
-
-            if self.reader.read_bit() {
-                let tail = usize::try_from(self.reader.read_bits(k)).map_err(|_| SrlError::ZeroRunTooLong)?;
-                self.kp = self.kp.saturating_sub(6);
-
-                let zeros = zeros.checked_add(tail).ok_or(SrlError::ZeroRunTooLong)?;
-                return (zeros <= MAX_ZERO_RUN).then_some(zeros).ok_or(SrlError::ZeroRunTooLong);
-            }
-
-            let chunk = 1usize << k;
-            zeros = zeros.checked_add(chunk).ok_or(SrlError::ZeroRunTooLong)?;
-            if zeros > MAX_ZERO_RUN {
-                return Err(SrlError::ZeroRunTooLong);
-            }
-
-            self.kp = self.kp.saturating_add(4).min(MAX_KP);
-        }
     }
 
     fn decode_nonzero(&mut self, num_bits: u8) -> Result<i16, SrlError> {

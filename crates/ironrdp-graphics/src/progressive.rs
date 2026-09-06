@@ -2075,28 +2075,34 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_pass_rejects_runaway_zero_run() {
+    fn upgrade_pass_reads_implicit_zeros_past_the_srl_stream() {
         let mut coefficients = [0i16; COEFFICIENTS_PER_COMPONENT];
         let mut sign = [SIGN_POSITIVE; COEFFICIENTS_PER_COMPONENT];
         sign[0] = SIGN_ZERO;
+        sign[4000] = SIGN_ZERO;
 
         let mut prev_prog_quant = ComponentCodecQuant::LOSSLESS;
         prev_prog_quant.hl1 = 4;
+        prev_prog_quant.hh3 = 1;
 
-        // A zero-DAS coefficient with an empty SRL stream reads only implicit
-        // zeros, so the zero run never terminates and overruns the component.
-        assert_eq!(
-            decode_upgrade_pass(
-                &[],
-                &[],
-                &prev_prog_quant,
-                &ComponentCodecQuant::LOSSLESS,
-                false,
-                &mut coefficients,
-                &mut sign,
-            ),
-            Err(SrlError::ZeroRunTooLong)
-        );
+        // Windows ends a component's SRL stream once every remaining entry is
+        // zero, without a terminating code word: the zero-DAS coefficients read
+        // implicit zeros and stay untouched.
+        decode_upgrade_pass(
+            &[],
+            &[],
+            &prev_prog_quant,
+            &ComponentCodecQuant::LOSSLESS,
+            false,
+            &mut coefficients,
+            &mut sign,
+        )
+        .unwrap();
+
+        assert_eq!(coefficients[0], 0);
+        assert_eq!(coefficients[4000], 0);
+        assert_eq!(sign[0], SIGN_ZERO);
+        assert_eq!(sign[4000], SIGN_ZERO);
     }
 
     #[test]
@@ -2113,10 +2119,21 @@ mod tests {
         let coefficients = tile.coefficients;
         let sign = tile.sign;
 
+        // The Y stream's non-zero value needs a 16-bit magnitude, which SRL
+        // cannot express; Cb and Cr must not be committed either.
+        let mut wide_prog_quant = prev_prog_quant;
+        wide_prog_quant.hl1 = 16;
+        tile.prog_quant[0] = wide_prog_quant;
         assert_eq!(
-            tile.decode_upgrade([&[], &[], &[]], [&[], &[], &[]], [ComponentCodecQuant::LOSSLESS; 3], 75,),
-            Err(SrlError::ZeroRunTooLong)
+            tile.decode_upgrade(
+                [&[0x80], &[], &[]],
+                [&[], &[], &[]],
+                [ComponentCodecQuant::LOSSLESS; 3],
+                75,
+            ),
+            Err(SrlError::InvalidBitCount(16))
         );
+        tile.prog_quant = [prev_prog_quant; 3];
 
         assert_eq!(tile.coefficients, coefficients);
         assert_eq!(tile.sign, sign);
