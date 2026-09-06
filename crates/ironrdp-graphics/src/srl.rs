@@ -109,6 +109,15 @@ impl<'a> SrlDecoder<'a> {
         let mut zero_count = 0u16;
 
         while zero_count + 1 < maximum {
+            if self.reader.is_exhausted() {
+                // Every remaining bit is an implicit zero, so the unary scan
+                // would run to the maximum magnitude. Take it directly instead
+                // of stepping one bit at a time: a one-byte stream ending in a
+                // code word would otherwise cost 32766 iterations per value.
+                zero_count = maximum - 1;
+                break;
+            }
+
             if self.reader.read_bit() {
                 break;
             }
@@ -258,6 +267,11 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Whether every following read would return an implicit zero.
+    fn is_exhausted(&self) -> bool {
+        self.byte_idx >= self.data.len()
+    }
+
     /// Reads the next bit, returning `false` once the buffer is exhausted.
     ///
     /// Windows encodes each component's SRL stream with no trailing padding, so
@@ -348,6 +362,19 @@ mod tests {
         let mut decoder = SrlDecoder::new(&[0x48, 0x00]);
         assert_eq!(decoder.decode(1, 4), Ok(vec![0]));
         assert_eq!(decoder.decode(2, 4), Ok(vec![0, 1]));
+    }
+
+    #[test]
+    fn past_end_unary_scan_yields_the_maximum_magnitude() {
+        // The stream ends immediately after the zero-run code word, so the
+        // magnitude's unary scan reads only implicit zeros. Every magnitude
+        // width must still resolve to the maximum, matching a bit-at-a-time
+        // scan over an infinite zero tail.
+        for num_bits in 1..=15u8 {
+            let maximum = max_magnitude(num_bits).unwrap();
+            let expected = i16::try_from(maximum).unwrap();
+            assert_eq!(decode_srl(&[0x80], 1, num_bits), Ok(vec![expected]));
+        }
     }
 
     #[test]
