@@ -1,6 +1,4 @@
-use ironrdp_core::{
-    Decode, DecodeResult, Encode, EncodeResult, ReadCursor, WriteCursor, ensure_fixed_part_size, invalid_field_err,
-};
+use ironrdp_core::{Decode, DecodeResult, Encode, EncodeResult, ReadCursor, WriteCursor, ensure_fixed_part_size};
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
@@ -37,8 +35,7 @@ impl<'de> Decode<'de> for ServerSetErrorInfoPdu {
         ensure_fixed_part_size!(in: src);
 
         let error_info = src.read_u32();
-        let error_info = ErrorInfo::from_u32(error_info)
-            .ok_or_else(|| invalid_field_err!("errorInfo", "unexpected info code", in: src))?;
+        let error_info = ErrorInfo::from_u32(error_info).unwrap_or(ErrorInfo::Unknown(error_info));
 
         Ok(Self(error_info))
     }
@@ -51,6 +48,9 @@ pub enum ErrorInfo {
     ProtocolIndependentLicensingCode(ProtocolIndependentLicensingCode),
     ProtocolIndependentConnectionBrokerCode(ProtocolIndependentConnectionBrokerCode),
     RdpSpecificCode(RdpSpecificCode),
+    /// A code this crate does not know. Kept verbatim so the server's graceful
+    /// disconnect still ends the session with a reason instead of a decode error.
+    Unknown(u32),
 }
 
 impl ErrorInfo {
@@ -66,6 +66,7 @@ impl ErrorInfo {
                 format!("[Protocol independent connection broker error] {}", c.description())
             }
             Self::RdpSpecificCode(c) => format!("[RDP specific code]: {}", c.description()),
+            Self::Unknown(code) => format!("[Unknown error info code] 0x{code:08X}"),
         }
     }
 
@@ -75,6 +76,7 @@ impl ErrorInfo {
             Self::ProtocolIndependentLicensingCode(c) => c.as_u32(),
             Self::ProtocolIndependentConnectionBrokerCode(c) => c.as_u32(),
             Self::RdpSpecificCode(c) => c.as_u32(),
+            Self::Unknown(code) => code,
         }
     }
 }
@@ -127,6 +129,8 @@ pub enum ProtocolIndependentCode {
     CloseStackOnDriverIfaceFailure = 0x0000_0012,
     ServerWinlogonCrash = 0x0000_0017,
     ServerCsrssCrash = 0x0000_0018,
+    ServerShutdown = 0x0000_0019,
+    ServerReboot = 0x0000_001A,
 }
 
 impl ProtocolIndependentCode {
@@ -170,6 +174,8 @@ impl ProtocolIndependentCode {
             }
             Self::ServerWinlogonCrash => "The Winlogon process running in the remote session terminated unexpectedly",
             Self::ServerCsrssCrash => "The CSRSS process running in the remote session terminated unexpectedly",
+            Self::ServerShutdown => "The remote server is busy shutting down",
+            Self::ServerReboot => "The remote server is busy rebooting",
         }
     }
 
@@ -618,5 +624,13 @@ mod tests {
     #[test]
     fn buffer_length_is_correct_for_server_set_error_info() {
         assert_eq!(SERVER_SET_ERROR_INFO_BUFFER.len(), SERVER_SET_ERROR_INFO.size());
+    }
+
+    #[test]
+    fn unknown_info_code_round_trips() {
+        let buffer = [0x00, 0x0F, 0x00, 0x00];
+        let pdu: ServerSetErrorInfoPdu = decode(buffer.as_ref()).unwrap();
+        assert_eq!(pdu, ServerSetErrorInfoPdu(ErrorInfo::Unknown(0x0000_0F00)));
+        assert_eq!(encode_vec(&pdu).unwrap(), buffer);
     }
 }
