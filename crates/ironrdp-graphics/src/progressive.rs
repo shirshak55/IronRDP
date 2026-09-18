@@ -1403,7 +1403,10 @@ impl ProgressiveDecoder {
             frame_tiles.clear();
         }
 
-        let mut decoded_tiles = Vec::new();
+        // One entry per tile: a payload may repeat REGION blocks over the same tiles, and
+        // reconstructing a 16 KiB tile for every repetition would let a few bytes of
+        // server data amplify into gigabytes of output.
+        let mut decoded_tiles: BTreeMap<(u16, u16), DecodedTile> = BTreeMap::new();
         let mut region_clipping_work = 0;
 
         // Process REGION blocks only inside the first FRAME_BEGIN/FRAME_END
@@ -1493,27 +1496,38 @@ impl ProgressiveDecoder {
                         bottom: rectangle.bottom + 1,
                     })
                     .collect::<Vec<_>>();
-                if update_rectangles.is_empty() {
-                    continue;
-                }
-
-                let mut tile = if let Some(tile) = region_tiles.remove(&(x_idx, y_idx)) {
-                    tile
-                } else {
-                    let Some(tile_state) = context.surface.get(x_idx, y_idx) else {
-                        continue;
-                    };
-                    let mut pixels = vec![0u8; usize::from(TILE_DIM) * usize::from(TILE_DIM) * TILE_BYTES_PER_PIXEL];
-                    tile_state.reconstruct_to_rgba(&mut pixels);
-                    DecodedTile {
-                        x_idx,
-                        y_idx,
-                        pixels,
-                        update_rectangles: Vec::new(),
+                let fresh = region_tiles.remove(&(x_idx, y_idx));
+                match decoded_tiles.entry((x_idx, y_idx)) {
+                    Entry::Occupied(mut entry) => {
+                        let tile = entry.get_mut();
+                        // Without new data the pixels already queued are still current.
+                        if let Some(fresh) = fresh {
+                            tile.pixels = fresh.pixels;
+                        }
+                        tile.update_rectangles.extend(update_rectangles);
                     }
-                };
-                tile.update_rectangles = update_rectangles;
-                decoded_tiles.push(tile);
+                    Entry::Vacant(_) if update_rectangles.is_empty() => {}
+                    Entry::Vacant(entry) => {
+                        let mut tile = if let Some(tile) = fresh {
+                            tile
+                        } else {
+                            let Some(tile_state) = context.surface.get(x_idx, y_idx) else {
+                                continue;
+                            };
+                            let mut pixels =
+                                vec![0u8; usize::from(TILE_DIM) * usize::from(TILE_DIM) * TILE_BYTES_PER_PIXEL];
+                            tile_state.reconstruct_to_rgba(&mut pixels);
+                            DecodedTile {
+                                x_idx,
+                                y_idx,
+                                pixels,
+                                update_rectangles: Vec::new(),
+                            }
+                        };
+                        tile.update_rectangles = update_rectangles;
+                        entry.insert(tile);
+                    }
+                }
             }
         }
 
@@ -1521,7 +1535,7 @@ impl ProgressiveDecoder {
             self.frame_tiles.clear();
         }
 
-        Ok(decoded_tiles)
+        Ok(decoded_tiles.into_values().collect())
     }
 
     /// Delete a codec context, freeing its progressive tile state.
@@ -2348,6 +2362,71 @@ mod tests {
             Ok(_) => panic!("tile intersections must share the clipping work budget"),
         };
         assert!(error.to_string().contains("clipping work limit exceeded"));
+    }
+
+    #[test]
+    fn decoder_queues_each_tile_once_per_payload() {
+        use ironrdp_pdu::codecs::rfx::RfxRectangle;
+        use ironrdp_pdu::codecs::rfx::progressive::{
+            ComponentCodecQuant, ProgressiveBlock, ProgressiveContextPdu, ProgressiveFrameBeginPdu,
+            ProgressiveFrameEndPdu, ProgressiveRegion, ProgressiveSyncPdu, ProgressiveTile, TileSimple,
+            encode_progressive_stream,
+        };
+
+        const REPEATS: usize = 200;
+
+        let component_data = [100, 0, 0].map(encode_full_quality_component);
+        let region = |tiles| {
+            ProgressiveBlock::Region(ProgressiveRegion {
+                tile_size: 0x40,
+                rects: vec![RfxRectangle {
+                    x: 0,
+                    y: 0,
+                    width: 64,
+                    height: 64,
+                }],
+                quant_vals: vec![ComponentCodecQuant::LOSSLESS],
+                quant_prog_vals: vec![],
+                flags: 0,
+                tiles,
+            })
+        };
+        let mut blocks = vec![
+            ProgressiveBlock::Sync(ProgressiveSyncPdu),
+            ProgressiveBlock::Context(ProgressiveContextPdu {
+                context_id: 0,
+                tile_size: 0x0040,
+                flags: 0,
+            }),
+            ProgressiveBlock::FrameBegin(ProgressiveFrameBeginPdu {
+                frame_index: 0,
+                region_count: 1,
+            }),
+            region(vec![ProgressiveTile::Simple(TileSimple {
+                quant_idx_y: 0,
+                quant_idx_cb: 0,
+                quant_idx_cr: 0,
+                x_idx: 0,
+                y_idx: 0,
+                flags: 0,
+                y_data: &component_data[0],
+                cb_data: &component_data[1],
+                cr_data: &component_data[2],
+                tail_data: &[],
+            })]),
+        ];
+        // Tile-less regions over the same tile cost the server a few bytes each.
+        blocks.extend(core::iter::repeat_with(|| region(vec![])).take(REPEATS));
+        blocks.push(ProgressiveBlock::FrameEnd(ProgressiveFrameEndPdu));
+        let stream = encode_progressive_stream(&blocks).expect("synthetic progressive stream should encode");
+
+        let mut decoder = ProgressiveDecoder::new();
+        let tiles = decoder
+            .decode_bitmap(1, 1, 64, 64, &stream)
+            .expect("repeated regions should decode");
+
+        assert_eq!(tiles.len(), 1);
+        assert_eq!(tiles[0].update_rectangles.len(), REPEATS + 1);
     }
 
     #[test]
