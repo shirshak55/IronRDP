@@ -68,13 +68,19 @@ where
         cx: &mut Context<'_>,
         buf: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        if buf.remaining() == 0 {
+            return Poll::Ready(Ok(()));
+        }
+
         let this = &mut *self;
 
-        let mut data = if let Some(data) = this.read_buf.take() {
-            data
-        } else {
+        let mut data = loop {
+            if let Some(data) = this.read_buf.take() {
+                break data;
+            }
             match ready!(Pin::new(&mut this.inner).poll_next(cx)) {
-                Some(Ok(WsReadMsg::Payload(data))) => data,
+                Some(Ok(WsReadMsg::Payload(data))) if data.is_empty() => continue,
+                Some(Ok(WsReadMsg::Payload(data))) => break data,
                 Some(Ok(WsReadMsg::Close)) => return Poll::Ready(Ok(())),
                 Some(Err(e)) => return Poll::Ready(Err(io::Error::other(e))),
                 None => return Poll::Ready(Ok(())),
@@ -104,7 +110,9 @@ where
         let this = &mut *self;
 
         // Try flushing preemptively.
-        let _ = Pin::new(&mut this.inner).poll_flush(cx);
+        if let Poll::Ready(Err(e)) = Pin::new(&mut this.inner).poll_flush(cx) {
+            return Poll::Ready(Err(io::Error::other(e)));
+        }
 
         // Make sure the sink is ready to send.
         if let Err(e) = ready!(Pin::new(&mut this.inner).poll_ready(cx)) {

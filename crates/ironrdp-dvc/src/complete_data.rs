@@ -35,6 +35,15 @@ impl CompleteData {
 
             self.data.clear();
         }
+        self.total_size = 0;
+
+        if total_data_size < data_first.data().len() {
+            return Err(invalid_field_err!(
+                "DVC message",
+                "length",
+                "first fragment exceeds total size"
+            ));
+        }
 
         if total_data_size == data_first.data().len() {
             Ok(Some(data_first.into_data()))
@@ -65,7 +74,7 @@ impl CompleteData {
                         // this is the last fragmented message, need to return the whole reassembled message
                         self.total_size = 0;
                         self.data.append(data.data_mut());
-                        Ok(Some(self.data.drain(..).collect()))
+                        Ok(Some(core::mem::take(&mut self.data)))
                     }
                     cmp::Ordering::Greater => {
                         error!("Actual DVC message size is grater than expected total DVC message size");

@@ -26,7 +26,12 @@ pub fn compress_and_wrap_egfx(
     mode: CompressionMode,
 ) -> Result<Vec<u8>, ZgfxError> {
     match mode {
-        CompressionMode::Never => Ok(wrap_uncompressed(data)),
+        CompressionMode::Never => {
+            for chunk in data.chunks(ZGFX_SEGMENTED_MAXSIZE) {
+                compressor.add_to_history(chunk);
+            }
+            Ok(wrap_uncompressed(data))
+        }
         CompressionMode::Auto => {
             let compressed = compressor.compress(data)?;
 

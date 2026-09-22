@@ -7,7 +7,7 @@ pub fn read_utf16_string(utf16_payload: &[u8], utf16_size_hint: Option<usize>) -
         Vec::with_capacity(utf16_payload.len() / 2)
     };
 
-    for chunk in utf16_payload.chunks_exact(2) {
+    for chunk in utf16_payload.as_chunks::<2>().0 {
         let code_unit = u16::from_le_bytes([chunk[0], chunk[1]]);
 
         // Stop reading at the null terminator

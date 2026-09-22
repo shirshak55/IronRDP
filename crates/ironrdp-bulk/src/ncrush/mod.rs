@@ -159,10 +159,6 @@ pub(crate) struct NCrushContext {
 }
 
 /// Helper to allocate a heap-zeroed boxed array.
-#[expect(
-    clippy::unnecessary_box_returns,
-    reason = "Box return is intentional: arrays up to 64 KB must be heap-allocated to avoid stack overflow"
-)]
 fn heap_zeroed_array<const N: usize, T: Default + Copy>() -> Box<[T; N]> {
     // Use vec to avoid stack allocation, then convert to boxed array
     let v: Vec<T> = vec![T::default(); N];
@@ -1266,13 +1262,14 @@ impl NCrushContext {
             }
 
             // Try to find a match via the hash chain
-            let mut match_offset: u16 = 0;
-            if self.match_table[ho] != 0 {
-                if let Some((mlen, moff)) = self.find_best_match(ho as u16)? {
-                    match_length = mlen;
-                    match_offset = moff;
-                }
-            }
+            let match_offset = if self.match_table[ho] != 0
+                && let Some((mlen, moff)) = self.find_best_match(ho as u16)?
+            {
+                match_length = mlen;
+                moff
+            } else {
+                0
+            };
 
             // Compute CopyOffset if we found a match
             let copy_offset = if match_length > 0 {

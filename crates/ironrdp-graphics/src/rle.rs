@@ -118,6 +118,7 @@ pub enum RleError {
         required_additional: usize,
     },
     EmptyImage,
+    ImageSizeOverflow,
     UnexpectedZeroLength,
 }
 
@@ -139,6 +140,7 @@ impl fmt::Display for RleError {
                 )
             }
             RleError::EmptyImage => write!(f, "height or width is zero"),
+            RleError::ImageSizeOverflow => write!(f, "image dimensions exceed addressable buffer size"),
             RleError::UnexpectedZeroLength => write!(f, "unexpected zero-length"),
         }
     }
@@ -154,8 +156,14 @@ fn decompress_helper<Mode: DepthMode>(
         return Err(RleError::EmptyImage);
     }
 
-    let row_delta = Mode::COLOR_DEPTH * width;
-    dst.resize(row_delta * height, 0);
+    let row_delta = Mode::COLOR_DEPTH
+        .checked_mul(width)
+        .ok_or(RleError::ImageSizeOverflow)?;
+    let image_size = row_delta
+        .checked_mul(height)
+        .filter(|&size| isize::try_from(size).is_ok())
+        .ok_or(RleError::ImageSizeOverflow)?;
+    dst.resize(image_size, 0);
     decompress_impl::<Mode>(src, dst, row_delta)?;
 
     Ok(Mode::PIXEL_FORMAT)
@@ -378,6 +386,8 @@ fn decompress_impl<Mode: DepthMode>(src: &[u8], dst: &mut [u8], row_delta: usize
             return Err(RleError::BadOrderCode);
         }
     }
+
+    dst.inner[dst.pos..].fill(0);
 
     Ok(())
 }

@@ -73,5 +73,8 @@ proptest.workspace = true
 rstest.workspace = true
 tokio = { version = "1", features = ["macros", "rt", "io-util", "sync"] }
 
+[package.metadata.cargo-machete]
+ignored = ["visibility"]
+
 [lints]
 workspace = true

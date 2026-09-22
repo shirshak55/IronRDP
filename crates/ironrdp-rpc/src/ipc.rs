@@ -314,21 +314,21 @@ fn pen_contact_from_request(contact: PenContactRequest) -> Result<PenContact, Re
         }
         pen = pen.with_rotation(rotation);
     }
-    if let Some(tilt_x) = contact.tilt_x {
-        if !(-MAX_PEN_TILT..=MAX_PEN_TILT).contains(&tilt_x) {
-            return Err(Response::typed_error(
-                AgentErrorCategory::InvalidRequest,
-                format!("pen tilt_x must be in -{MAX_PEN_TILT}..={MAX_PEN_TILT}"),
-            ));
-        }
+    if let Some(tilt_x) = contact.tilt_x
+        && !(-MAX_PEN_TILT..=MAX_PEN_TILT).contains(&tilt_x)
+    {
+        return Err(Response::typed_error(
+            AgentErrorCategory::InvalidRequest,
+            format!("pen tilt_x must be in -{MAX_PEN_TILT}..={MAX_PEN_TILT}"),
+        ));
     }
-    if let Some(tilt_y) = contact.tilt_y {
-        if !(-MAX_PEN_TILT..=MAX_PEN_TILT).contains(&tilt_y) {
-            return Err(Response::typed_error(
-                AgentErrorCategory::InvalidRequest,
-                format!("pen tilt_y must be in -{MAX_PEN_TILT}..={MAX_PEN_TILT}"),
-            ));
-        }
+    if let Some(tilt_y) = contact.tilt_y
+        && !(-MAX_PEN_TILT..=MAX_PEN_TILT).contains(&tilt_y)
+    {
+        return Err(Response::typed_error(
+            AgentErrorCategory::InvalidRequest,
+            format!("pen tilt_y must be in -{MAX_PEN_TILT}..={MAX_PEN_TILT}"),
+        ));
     }
     match (contact.tilt_x, contact.tilt_y) {
         (Some(tilt_x), Some(tilt_y)) => {

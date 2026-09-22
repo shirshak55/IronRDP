@@ -71,5 +71,8 @@ zstd-safe = { version = "7.2", optional = true }
 [dev-dependencies]
 tokio = { version = "1", features = ["sync"] }
 
+[package.metadata.cargo-machete]
+ignored = ["qoicoubeh"]
+
 [lints]
 workspace = true

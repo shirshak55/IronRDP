@@ -9,6 +9,7 @@ pub enum BitmapDecodeError {
     Decode(DecodeError),
     Rle(RleDecodeError),
     InvalidUncompressedDataSize,
+    InvalidImageSize,
 }
 
 impl core::fmt::Display for BitmapDecodeError {
@@ -17,6 +18,9 @@ impl core::fmt::Display for BitmapDecodeError {
             BitmapDecodeError::Decode(_error) => write!(f, "failed to decode RDP6 bitmap stream PDU"),
             BitmapDecodeError::Rle(_error) => {
                 write!(f, "failed to perform RLE decompression of RDP6 bitmap stream")
+            }
+            BitmapDecodeError::InvalidImageSize => {
+                write!(f, "image dimensions are zero or exceed addressable buffer size")
             }
             BitmapDecodeError::InvalidUncompressedDataSize => write!(
                 f,
@@ -31,7 +35,7 @@ impl core::error::Error for BitmapDecodeError {
         match self {
             BitmapDecodeError::Decode(err) => Some(err),
             BitmapDecodeError::Rle(err) => Some(err),
-            BitmapDecodeError::InvalidUncompressedDataSize => None,
+            BitmapDecodeError::InvalidUncompressedDataSize | BitmapDecodeError::InvalidImageSize => None,
         }
     }
 }
@@ -296,6 +300,15 @@ impl BitmapStreamDecoder {
         image_width: usize,
         image_height: usize,
     ) -> Result<(), BitmapDecodeError> {
+        if image_width == 0 || image_height == 0 {
+            return Err(BitmapDecodeError::InvalidImageSize);
+        }
+        image_width
+            .checked_mul(image_height)
+            .and_then(|size| size.checked_mul(4))
+            .filter(|&size| isize::try_from(size).is_ok())
+            .ok_or(BitmapDecodeError::InvalidImageSize)?;
+
         let bitmap = decode::<BitmapStreamPdu<'_>>(bitmap_data)?;
 
         let decoder = BitmapStreamDecoderImpl::init(bitmap, image_width, image_height);

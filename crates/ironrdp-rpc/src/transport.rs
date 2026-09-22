@@ -77,6 +77,7 @@ pub async fn open_stream(endpoint: &Endpoint, request: &Request) -> anyhow::Resu
 #[cfg(unix)]
 mod imp {
     use std::io;
+    use std::os::unix::fs::{FileTypeExt as _, MetadataExt as _, OpenOptionsExt as _};
     use std::path::PathBuf;
 
     use tokio::net::{UnixListener, UnixStream};
@@ -93,8 +94,7 @@ mod imp {
 
     /// Returns a per-user endpoint for `name`.
     pub fn default_endpoint_named(name: &str) -> Endpoint {
-        // SAFETY: `getuid` has no preconditions and is always safe to call.
-        let uid = unsafe { libc::getuid() };
+        let uid = current_uid();
         let dir = std::env::var_os("XDG_RUNTIME_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| PathBuf::from("/tmp"));
@@ -111,23 +111,76 @@ mod imp {
         Endpoint(PathBuf::from(value))
     }
 
-    /// Removes a stale socket endpoint while refusing to touch non-socket paths.
-    pub async fn prepare_endpoint(endpoint: &Endpoint) -> io::Result<()> {
-        if !endpoint.0.exists() {
-            return Ok(());
-        }
-        if connect(endpoint).await.is_ok() {
+    fn current_uid() -> libc::uid_t {
+        // SAFETY: `getuid` has no preconditions and is always safe to call.
+        unsafe { libc::getuid() }
+    }
+
+    #[expect(
+        clippy::filetype_is_file,
+        reason = "endpoint locks must reject FIFOs, devices and sockets"
+    )]
+    fn lock_endpoint(endpoint: &Endpoint) -> io::Result<std::fs::File> {
+        let mut path = endpoint.0.as_os_str().to_owned();
+        path.push(".lock");
+        let file = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        let metadata = file.metadata()?;
+        if !metadata.file_type().is_file() || metadata.uid() != current_uid() {
             return Err(io::Error::new(
-                io::ErrorKind::AddrInUse,
-                format!("an RPC listener already appears to be running at {endpoint}"),
+                io::ErrorKind::PermissionDenied,
+                "rpc endpoint lock is not a regular file owned by the current user",
             ));
         }
-        use std::os::unix::fs::FileTypeExt as _;
-        let metadata = std::fs::symlink_metadata(&endpoint.0)?;
+        match file.try_lock() {
+            Ok(()) => Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) => Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!("an RPC listener is starting or running at {endpoint}"),
+            )),
+            Err(std::fs::TryLockError::Error(error)) => Err(error),
+        }
+    }
+
+    /// Removes a stale socket endpoint while refusing to touch non-socket paths.
+    pub async fn prepare_endpoint(endpoint: &Endpoint) -> io::Result<()> {
+        let _lock = lock_endpoint(endpoint)?;
+        let metadata = match std::fs::symlink_metadata(&endpoint.0) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
         if !metadata.file_type().is_socket() {
             return Err(io::Error::new(
                 io::ErrorKind::AlreadyExists,
                 format!("refusing to remove {endpoint}: path exists and is not a socket"),
+            ));
+        }
+        match connect(endpoint).await {
+            Ok(_) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    format!("an RPC listener already appears to be running at {endpoint}"),
+                ));
+            }
+            Err(error) if error.kind() == io::ErrorKind::ConnectionRefused => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        }
+        let current = match std::fs::symlink_metadata(&endpoint.0) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        if !current.file_type().is_socket() || current.dev() != metadata.dev() || current.ino() != metadata.ino() {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrInUse,
+                format!("rpc endpoint changed while checking {endpoint}"),
             ));
         }
         std::fs::remove_file(&endpoint.0)
@@ -142,21 +195,36 @@ mod imp {
     pub struct Listener {
         inner: UnixListener,
         path: PathBuf,
+        device: u64,
+        inode: u64,
+        _lock: std::fs::File,
     }
 
     impl Listener {
         /// Binds the listener at `endpoint`.
         pub fn bind(endpoint: &Endpoint) -> io::Result<Self> {
+            let lock = lock_endpoint(endpoint)?;
             let inner = UnixListener::bind(&endpoint.0)?;
+            let metadata = std::fs::symlink_metadata(&endpoint.0)?;
+            if !metadata.file_type().is_socket() {
+                return Err(io::Error::new(
+                    io::ErrorKind::AddrInUse,
+                    "rpc endpoint was replaced during bind",
+                ));
+            }
+            let listener = Self {
+                inner,
+                path: endpoint.0.clone(),
+                device: metadata.dev(),
+                inode: metadata.ino(),
+                _lock: lock,
+            };
             // Restrict the socket to the owner. The fallback directory is world-writable `/tmp`, so
             // without this any local user could connect and drive the session (input, screenshots,
             // logs). Fail loudly rather than serve on a world-accessible endpoint.
             use std::os::unix::fs::PermissionsExt as _;
             std::fs::set_permissions(&endpoint.0, std::fs::Permissions::from_mode(0o600))?;
-            Ok(Self {
-                inner,
-                path: endpoint.0.clone(),
-            })
+            Ok(listener)
         }
 
         /// Accepts the next client connection.
@@ -169,7 +237,13 @@ mod imp {
     impl Drop for Listener {
         fn drop(&mut self) {
             // Best-effort removal of the socket file on shutdown (named pipes need no cleanup).
-            let _ = std::fs::remove_file(&self.path);
+            if let Ok(metadata) = std::fs::symlink_metadata(&self.path)
+                && metadata.file_type().is_socket()
+                && metadata.dev() == self.device
+                && metadata.ino() == self.inode
+            {
+                let _ = std::fs::remove_file(&self.path);
+            }
         }
     }
 }

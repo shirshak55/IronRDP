@@ -30,6 +30,12 @@ impl Encode for FastPathInputHeader {
     fn encode(&self, dst: &mut WriteCursor<'_>) -> EncodeResult<()> {
         ensure_size!(in: dst, size: self.size());
 
+        let length = self
+            .data_length
+            .checked_add(self.size())
+            .filter(|length| *length <= 0x7fff)
+            .ok_or_else(|| invalid_field_err!("length", "fast-path input length exceeds 15 bits", in: dst))?;
+
         let mut header = 0u8;
         header.set_bits(0..2, 0); // fast-path action
         if self.num_events < 16 {
@@ -38,8 +44,8 @@ impl Encode for FastPathInputHeader {
         header.set_bits(6..8, self.flags.bits());
         dst.write_u8(header);
 
-        per::write_length(dst, cast_length!("len", self.data_length + self.size(), in: dst)?);
-        if self.num_events > 15 {
+        per::write_length(dst, cast_length!("len", length, in: dst)?);
+        if self.num_events == 0 || 15 < self.num_events {
             dst.write_u8(self.num_events);
         }
 
@@ -51,8 +57,10 @@ impl Encode for FastPathInputHeader {
     }
 
     fn size(&self) -> usize {
-        let num_events_length = if self.num_events < 16 { 0 } else { 1 };
-        Self::FIXED_PART_SIZE + per::sizeof_length(self.data_length + num_events_length + 1) + num_events_length
+        let num_events_length = usize::from(self.num_events == 0 || 15 < self.num_events);
+        Self::FIXED_PART_SIZE
+            + per::sizeof_length(self.data_length.saturating_add(num_events_length + 2))
+            + num_events_length
     }
 }
 
@@ -77,7 +85,9 @@ impl<'de> Decode<'de> for FastPathInputHeader {
             0
         };
 
-        let data_length = usize::from(length) - sizeof_length - 1 - num_events_length;
+        let data_length = usize::from(length)
+            .checked_sub(sizeof_length + 1 + num_events_length)
+            .ok_or_else(|| invalid_field_err!("length", "length is smaller than the input header", in: src))?;
 
         Ok(FastPathInputHeader {
             flags,
@@ -156,6 +166,9 @@ impl Encode for FastPathInputEvent {
                 pdu.encode(dst)?;
             }
             FastPathInputEvent::MouseEventEx(pdu) => {
+                pdu.encode(dst)?;
+            }
+            FastPathInputEvent::MouseEventRel(pdu) => {
                 pdu.encode(dst)?;
             }
             FastPathInputEvent::QoeEvent(stamp) => {
@@ -351,9 +364,15 @@ impl Encode for FastPathInput {
 impl<'de> Decode<'de> for FastPathInput {
     fn decode(src: &mut ReadCursor<'de>) -> DecodeResult<Self> {
         let header = FastPathInputHeader::decode(src)?;
-        let events = core::iter::repeat_with(|| FastPathInputEvent::decode(src))
+        ensure_size!(in: src, size: header.data_length);
+        let mut data = ReadCursor::new(src.read_slice(header.data_length));
+        let events = core::iter::repeat_with(|| FastPathInputEvent::decode(&mut data))
             .take(usize::from(header.num_events))
             .collect::<Result<Vec<_>, _>>()?;
+
+        if !data.is_empty() {
+            return Err(invalid_field_err!("length", "input events do not fill the declared length", in: data));
+        }
 
         Self::new(events)
     }

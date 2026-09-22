@@ -1,4 +1,7 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
+use std::path::Path;
+
+use tinyjson::JsonValue;
 
 use crate::prelude::*;
 
@@ -84,6 +87,42 @@ pub fn typos(sh: &Shell) -> anyhow::Result<()> {
 
 pub fn dependencies(sh: &Shell) -> anyhow::Result<()> {
     let _s = Section::new("DEPENDENCIES");
+
+    if !is_installed(sh, &CARGO_MACHETE) {
+        anyhow::bail!("`cargo-machete` binary is missing. Please run `cargo xtask check install`.");
+    }
+
+    let metadata = cmd!(sh, "{CARGO} metadata --no-deps --format-version 1 --locked").read()?;
+    let metadata: JsonValue = metadata.parse().context("parse Cargo metadata")?;
+    let metadata = metadata
+        .get::<HashMap<String, JsonValue>>()
+        .context("invalid Cargo metadata")?;
+    let members = metadata
+        .get("workspace_members")
+        .and_then(JsonValue::get::<Vec<JsonValue>>)
+        .context("missing workspace members")?;
+    let packages = metadata
+        .get("packages")
+        .and_then(JsonValue::get::<Vec<JsonValue>>)
+        .context("missing workspace packages")?;
+    let mut directories = Vec::new();
+    for package in packages {
+        let package = package
+            .get::<HashMap<String, JsonValue>>()
+            .context("invalid package metadata")?;
+        let id = package.get("id").context("missing package ID")?;
+        if members.contains(id) {
+            let manifest = package
+                .get("manifest_path")
+                .and_then(JsonValue::get::<String>)
+                .context("missing package manifest path")?;
+            directories.push(Path::new(manifest).parent().context("invalid package manifest path")?);
+        }
+    }
+    if directories.len() != members.len() || directories.is_empty() {
+        anyhow::bail!("incomplete workspace package metadata");
+    }
+    cmd!(sh, "{CARGO} machete --skip-target-dir").args(directories).run()?;
 
     // Dependency-graph invariants that must hold to keep crate boundaries slim.
     // Each pair `(package, banned)` asserts that `package` has no transitive
@@ -229,6 +268,7 @@ pub fn install(sh: &Shell) -> anyhow::Result<()> {
 
     cargo_install(sh, &TYPOS_CLI)?;
     cargo_install(sh, &CARGO_HACK)?;
+    cargo_install(sh, &CARGO_MACHETE)?;
 
     Ok(())
 }

@@ -101,6 +101,14 @@ impl<'a> BitStreamReader<'a> {
         }
     }
 
+    pub(crate) fn try_shift(&mut self, nbits: u32) -> Result<(), crate::error::BulkError> {
+        if self.remaining_bits() < usize::try_from(nbits).expect("bit count fits usize") {
+            return Err(crate::error::BulkError::UnexpectedEndOfInput);
+        }
+        self.shift(nbits);
+        Ok(())
+    }
+
     /// Loads the accumulator with 4 bytes from the current position (big-endian)
     /// and prefetches the next 4 bytes.
     fn fetch(&mut self) {

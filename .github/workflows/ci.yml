@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - master
+      - qrdp
   pull_request:
     types: [opened, synchronize, reopened]
   workflow_dispatch:
@@ -34,6 +35,18 @@ jobs:
 
       - name: Check formatting
         run: cargo xtask check fmt -v
+
+      - name: Binary cache
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25
+        with:
+          path: ./.cargo/local_root/bin
+          key: ${{ runner.os }}-bin-${{ github.job }}-${{ hashFiles('xtask/src/bin_version.rs') }}
+
+      - name: Prepare dependency checks
+        run: cargo xtask check install -v
+
+      - name: Check dependencies
+        run: cargo xtask check dependencies -v
 
   test-settings:
     name: Check test settings
@@ -133,6 +146,12 @@ jobs:
 
       # Compilation is separated from execution so we know exactly the time for each step.
 
+      - name: Prepare dependency checks
+        run: cargo xtask check install -v
+
+      - name: Dependencies
+        run: cargo xtask check dependencies -v
+
       - name: Tests (compile)
         run: cargo xtask check tests --no-run -v
 
@@ -145,9 +164,6 @@ jobs:
 
       - name: Lints
         run: cargo xtask check lints -v
-
-      - name: Dependencies
-        run: cargo xtask check dependencies -v
 
       - name: WASM (prepare)
         run: cargo xtask wasm install -v

@@ -91,12 +91,12 @@ fn main() -> anyhow::Result<()> {
         }
         Action::Ci => {
             check::fmt(&sh)?;
+            check::dependencies(&sh)?;
             check::typos(&sh)?;
             check::tests_compile(&sh)?;
             check::tests_run(&sh)?;
             check::lints(&sh)?;
             features::run_all(&sh)?;
-            check::dependencies(&sh)?;
             wasm::check(&sh)?;
             fuzz::run(&sh, None, None)?;
             web::install(&sh)?;

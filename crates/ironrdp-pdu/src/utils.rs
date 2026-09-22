@@ -75,8 +75,10 @@ pub fn read_string_from_cursor(
             // Find null or read all if null is not found
             cursor
                 .remaining()
-                .chunks_exact(2)
-                .position(|chunk| chunk == [0, 0])
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .position(|chunk| *chunk == [0, 0])
                 .map(|null_terminator_pos| null_terminator_pos + 1) // Read null code point
                 .unwrap_or(cursor.len() / 2)
         } else {

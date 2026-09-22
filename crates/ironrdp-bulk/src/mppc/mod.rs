@@ -149,14 +149,14 @@ impl MppcContext {
                 let literal = ((accumulator & 0x7F00_0000) >> 24) as u8;
                 self.history_buffer[history_ptr] = literal;
                 history_ptr += 1;
-                bs.shift(8);
+                bs.try_shift(8)?;
                 continue;
             } else if (accumulator & 0xC000_0000) == 0x8000_0000 {
                 // Literal >= 0x80: bits 10 followed by lower 7 bits
                 let literal = (((accumulator & 0x3F80_0000) >> 23) as u8).wrapping_add(0x80);
                 self.history_buffer[history_ptr] = literal;
                 history_ptr += 1;
-                bs.shift(9);
+                bs.try_shift(9)?;
                 continue;
             }
 
@@ -169,19 +169,19 @@ impl MppcContext {
                 if (accumulator & 0xF800_0000) == 0xF800_0000 {
                     // CopyOffset [0, 63]: bits 11111 + 6 bits
                     copy_offset = ((accumulator >> 21) & 0x3F) as usize;
-                    bs.shift(11);
+                    bs.try_shift(11)?;
                 } else if (accumulator & 0xF800_0000) == 0xF000_0000 {
                     // CopyOffset [64, 319]: bits 11110 + 8 bits
                     copy_offset = ((accumulator >> 19) & 0xFF) as usize + 64;
-                    bs.shift(13);
+                    bs.try_shift(13)?;
                 } else if (accumulator & 0xF000_0000) == 0xE000_0000 {
                     // CopyOffset [320, 2367]: bits 1110 + 11 bits
                     copy_offset = ((accumulator >> 17) & 0x7FF) as usize + 320;
-                    bs.shift(15);
+                    bs.try_shift(15)?;
                 } else if (accumulator & 0xE000_0000) == 0xC000_0000 {
                     // CopyOffset [2368, ]: bits 110 + 16 bits
                     copy_offset = ((accumulator >> 13) & 0xFFFF) as usize + 2368;
-                    bs.shift(19);
+                    bs.try_shift(19)?;
                 } else {
                     return Err(BulkError::InvalidCompressedData("invalid RDP5 CopyOffset encoding"));
                 }
@@ -190,15 +190,15 @@ impl MppcContext {
                 if (accumulator & 0xF000_0000) == 0xF000_0000 {
                     // CopyOffset [0, 63]: bits 1111 + 6 bits
                     copy_offset = ((accumulator >> 22) & 0x3F) as usize;
-                    bs.shift(10);
+                    bs.try_shift(10)?;
                 } else if (accumulator & 0xF000_0000) == 0xE000_0000 {
                     // CopyOffset [64, 319]: bits 1110 + 8 bits
                     copy_offset = ((accumulator >> 20) & 0xFF) as usize + 64;
-                    bs.shift(12);
+                    bs.try_shift(12)?;
                 } else if (accumulator & 0xE000_0000) == 0xC000_0000 {
                     // CopyOffset [320, 8191]: bits 110 + 13 bits
                     copy_offset = ((accumulator >> 16) & 0x1FFF) as usize + 320;
-                    bs.shift(16);
+                    bs.try_shift(16)?;
                 } else {
                     return Err(BulkError::InvalidCompressedData("invalid RDP4 CopyOffset encoding"));
                 }
@@ -212,63 +212,63 @@ impl MppcContext {
             if (accumulator & 0x8000_0000) == 0x0000_0000 {
                 // LengthOfMatch [3]: bit 0
                 length_of_match = 3;
-                bs.shift(1);
+                bs.try_shift(1)?;
             } else if (accumulator & 0xC000_0000) == 0x8000_0000 {
                 // LengthOfMatch [4, 7]: bits 10 + 2 bits
                 length_of_match = ((accumulator >> 28) & 0x0003) as usize + 4;
-                bs.shift(4);
+                bs.try_shift(4)?;
             } else if (accumulator & 0xE000_0000) == 0xC000_0000 {
                 // LengthOfMatch [8, 15]: bits 110 + 3 bits
                 length_of_match = ((accumulator >> 26) & 0x0007) as usize + 8;
-                bs.shift(6);
+                bs.try_shift(6)?;
             } else if (accumulator & 0xF000_0000) == 0xE000_0000 {
                 // LengthOfMatch [16, 31]: bits 1110 + 4 bits
                 length_of_match = ((accumulator >> 24) & 0x000F) as usize + 16;
-                bs.shift(8);
+                bs.try_shift(8)?;
             } else if (accumulator & 0xF800_0000) == 0xF000_0000 {
                 // LengthOfMatch [32, 63]: bits 11110 + 5 bits
                 length_of_match = ((accumulator >> 22) & 0x001F) as usize + 32;
-                bs.shift(10);
+                bs.try_shift(10)?;
             } else if (accumulator & 0xFC00_0000) == 0xF800_0000 {
                 // LengthOfMatch [64, 127]: bits 111110 + 6 bits
                 length_of_match = ((accumulator >> 20) & 0x003F) as usize + 64;
-                bs.shift(12);
+                bs.try_shift(12)?;
             } else if (accumulator & 0xFE00_0000) == 0xFC00_0000 {
                 // LengthOfMatch [128, 255]: bits 1111110 + 7 bits
                 length_of_match = ((accumulator >> 18) & 0x007F) as usize + 128;
-                bs.shift(14);
+                bs.try_shift(14)?;
             } else if (accumulator & 0xFF00_0000) == 0xFE00_0000 {
                 // LengthOfMatch [256, 511]: bits 11111110 + 8 bits
                 length_of_match = ((accumulator >> 16) & 0x00FF) as usize + 256;
-                bs.shift(16);
+                bs.try_shift(16)?;
             } else if (accumulator & 0xFF80_0000) == 0xFF00_0000 {
                 // LengthOfMatch [512, 1023]: bits 111111110 + 9 bits
                 length_of_match = ((accumulator >> 14) & 0x01FF) as usize + 512;
-                bs.shift(18);
+                bs.try_shift(18)?;
             } else if (accumulator & 0xFFC0_0000) == 0xFF80_0000 {
                 // LengthOfMatch [1024, 2047]: bits 1111111110 + 10 bits
                 length_of_match = ((accumulator >> 12) & 0x03FF) as usize + 1024;
-                bs.shift(20);
+                bs.try_shift(20)?;
             } else if (accumulator & 0xFFE0_0000) == 0xFFC0_0000 {
                 // LengthOfMatch [2048, 4095]: bits 11111111110 + 11 bits
                 length_of_match = ((accumulator >> 10) & 0x07FF) as usize + 2048;
-                bs.shift(22);
+                bs.try_shift(22)?;
             } else if (accumulator & 0xFFF0_0000) == 0xFFE0_0000 {
                 // LengthOfMatch [4096, 8191]: bits 111111111110 + 12 bits
                 length_of_match = ((accumulator >> 8) & 0x0FFF) as usize + 4096;
-                bs.shift(24);
+                bs.try_shift(24)?;
             } else if (accumulator & 0xFFF8_0000) == 0xFFF0_0000 && compression_level != 0 {
                 // RDP5 only: LengthOfMatch [8192, 16383]: bits 1111111111110 + 13 bits
                 length_of_match = ((accumulator >> 6) & 0x1FFF) as usize + 8192;
-                bs.shift(26);
+                bs.try_shift(26)?;
             } else if (accumulator & 0xFFFC_0000) == 0xFFF8_0000 && compression_level != 0 {
                 // RDP5 only: LengthOfMatch [16384, 32767]: bits 11111111111110 + 14 bits
                 length_of_match = ((accumulator >> 4) & 0x3FFF) as usize + 16384;
-                bs.shift(28);
+                bs.try_shift(28)?;
             } else if (accumulator & 0xFFFE_0000) == 0xFFFC_0000 && compression_level != 0 {
                 // RDP5 only: LengthOfMatch [32768, 65535]: bits 111111111111110 + 15 bits
                 length_of_match = ((accumulator >> 2) & 0x7FFF) as usize + 32768;
-                bs.shift(30);
+                bs.try_shift(30)?;
             } else {
                 return Err(BulkError::InvalidCompressedData("invalid LengthOfMatch encoding"));
             }
